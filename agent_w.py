@@ -12,17 +12,24 @@ from tempfile import NamedTemporaryFile
 import queue
 import sys
 import uuid
+from dotenv import load_dotenv
 import platform
 from groq import Groq
 # Platform-specific imports
 if platform.system() == "Windows":
     import win32gui
 
-# Constants
-USER_ID = 'RUToMGZVt7PZBA8QLz8XSnTCaP84wzZaox9Uk4XEphx'
-API_URL = 'https://studycompanion-ai.us01.erebrus.io/9993d6be-0e11-0f0b-b46b-dcccfcd2ab8f/message'
+load_dotenv()
+
 STOP_WORDS = ["stop", "exit", "quit", "bye"]
 
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if not GROQ_API_KEY:
+    print("❌ GROQ_API_KEY not found")
+    exit()
+
+print("✅ Groq key loaded")
+client = Groq(api_key=GROQ_API_KEY)
 # Initialize tokenizer
 try:
     tokenizer = tiktoken.encoding_for_model("gpt-3.5-turbo")
@@ -335,20 +342,23 @@ def get_active_window_info():
             }
 
 def query_agent(context, include_screen_context=True):
-    """Send context to API with comprehensive screen awareness for intelligent responses."""
     try:
-        # Always include comprehensive screen context for better responses
-        enhanced_context = context
-        screen_context_info = ""
-        
-        if include_screen_context:
-            try:
-                screen_info = get_active_window_info()
-                
-                # Add comprehensive screen context to every query
-                screen_context_info = f"""
+        screen_info = get_active_window_info()
 
+        if include_screen_context:
+            enhanced_context = f"""
+Current Screen:
+{screen_info['detailed_context']}
+
+User Query:
+{context}
+"""
+        else:
+            enhanced_context = context
+
+        system_prompt = f"""
 === CURRENT USER SCREEN CONTEXT ===
+
 {screen_info['detailed_context']}
 
 USER'S CURRENT ENVIRONMENT:
@@ -357,10 +367,10 @@ USER'S CURRENT ENVIRONMENT:
 - Window Title: {screen_info['title']}
 - Context: {screen_info['context']}
 
-INSTRUCTION: Based on the above screen context, please provide a response that is specifically relevant to what the user is currently doing. If they ask about something unrelated to their current screen, acknowledge their current context but still answer their question. Always be helpful and contextual.
+INSTRUCTION:
+Based on the above screen context, provide a response that is specifically relevant to what the user is currently doing.
 
-USER'S QUESTION/REQUEST:
-{context}
+If they ask about something unrelated to their current screen, answer normally while remaining helpful.
 
 RESPONSE GUIDELINES:
 - Consider what they're currently working on
@@ -368,35 +378,29 @@ RESPONSE GUIDELINES:
 - If it's a general question, relate it to their current context when possible
 - Be direct and actionable
 """
-                
-                enhanced_context = screen_context_info
-                
-            except Exception as e:
-                print(f"⚠️ Context enhancement error: {e}")
-                enhanced_context = f"User Question: {context}\n\nNote: Unable to detect current screen context, providing general assistance."
-        
-        print(f"🔍 Sending enhanced query with screen context...")
-        
-        response = requests.post(
-            API_URL,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            data={
-                "text": enhanced_context,
-                "userId": USER_ID,
-                "voice_mode": "false"
-            },
-            timeout=20  # Increased timeout for complex context queries
-        )
-        response.raise_for_status()
-        data = response.json()
-        if isinstance(data, list) and len(data) > 0 and "text" in data[0]:
-            return data[0]["text"]
-        elif isinstance(data, dict) and "text" in data:
-            return data["text"]
-        return "No response text."
-    except Exception as e:
-        return f"⚠️ Error: {e}"
 
+        completion = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": enhanced_context
+                }
+            ],
+            temperature=0.7,
+            max_tokens=500
+        )
+
+        return completion.choices[0].message.content
+
+    except Exception as e:
+        return f"⚠️ Groq Error: {e}"
+    
+    
 def count_tokens(text):
     """Count tokens in text using tiktoken."""
     try:
