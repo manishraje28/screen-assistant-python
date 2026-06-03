@@ -1,0 +1,15 @@
+requests==2.32.3
+psutil==7.0.0
+SpeechRecognition==3.14.3
+gTTS==2.5.4
+pygame==2.6.1
+tiktoken==0.9.0
+
+# Audio dependencies
+PyAudio==0.2.14
+
+# Windows-specific (will be ignored on Linux)
+pywin32>=311; sys_platform == "win32"
+
+# For binary creation
+pyinstaller
